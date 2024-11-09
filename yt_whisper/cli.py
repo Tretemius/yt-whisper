@@ -4,9 +4,9 @@ from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE
 import argparse
 import warnings
 import yt_dlp
+import json  # Ajout de l'import manquant
 from .utils import slugify, str2bool, write_srt, write_vtt
 import tempfile
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -15,8 +15,8 @@ def main():
                         help="video URLs to transcribe")
     parser.add_argument("--model", default="small",
                         choices=whisper.available_models(), help="name of the Whisper model to use")
-    parser.add_argument("--format", default="vtt",
-                        choices=["vtt", "srt"], help="the subtitle format to output")
+    parser.add_argument("--format", default="txt",  # Format par défaut modifié
+                        choices=["vtt", "srt", "txt", "json"], help="the subtitle format to output")
     parser.add_argument("--output_dir", "-o", type=str,
                         default=".", help="directory to save the outputs")
     parser.add_argument("--verbose", type=str2bool, default=False,
@@ -25,7 +25,6 @@ def main():
                         "transcribe", "translate"], help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
     parser.add_argument("--language", type=str, default=None, choices=sorted(LANGUAGES.keys()) + sorted([k.title() for k in TO_LANGUAGE_CODE.keys()]),
                         help="language spoken in the audio, skip to perform language detection")
-
     parser.add_argument("--break-lines", type=int, default=0, 
                         help="Whether to break lines into a bottom-heavy pyramid shape if line length exceeds N characters. 0 disables line breaking.")
 
@@ -44,24 +43,36 @@ def main():
     audios = get_audio(args.pop("video"))
     break_lines = args.pop("break_lines")
 
+    # Logique pour la sauvegarde des différents formats
     for title, audio_path in audios.items():
         warnings.filterwarnings("ignore")
         result = model.transcribe(audio_path, **args)
         warnings.filterwarnings("default")
 
-        if (subtitles_format == 'vtt'):
+        if subtitles_format == 'vtt':
             vtt_path = os.path.join(output_dir, f"{slugify(title)}.vtt")
             with open(vtt_path, 'w', encoding="utf-8") as vtt:
                 write_vtt(result["segments"], file=vtt, line_length=break_lines)
-
             print("Saved VTT to", os.path.abspath(vtt_path))
-        else:
+
+        elif subtitles_format == 'srt':
             srt_path = os.path.join(output_dir, f"{slugify(title)}.srt")
             with open(srt_path, 'w', encoding="utf-8") as srt:
                 write_srt(result["segments"], file=srt, line_length=break_lines)
-
             print("Saved SRT to", os.path.abspath(srt_path))
 
+        elif subtitles_format == 'txt':
+            txt_path = os.path.join(output_dir, f"{slugify(title)}.txt")
+            with open(txt_path, 'w', encoding="utf-8") as txt:
+                for segment in result["segments"]:
+                    txt.write(segment["text"] + "\n")
+            print("Saved TXT to", os.path.abspath(txt_path))
+
+        elif subtitles_format == 'json':
+            json_path = os.path.join(output_dir, f"{slugify(title)}.json")
+            with open(json_path, 'w', encoding="utf-8") as json_file:
+                json.dump(result, json_file, ensure_ascii=False, indent=4)
+            print("Saved JSON to", os.path.abspath(json_path))
 
 def get_audio(urls):
     temp_dir = tempfile.gettempdir()
@@ -84,7 +95,6 @@ def get_audio(urls):
         paths[result["title"]] = os.path.join(temp_dir, f"{result['id']}.mp3")
 
     return paths
-
 
 if __name__ == '__main__':
     main()
